@@ -1,5 +1,3 @@
-
-
 # AI Real Estate Search Engine
 
 An AI-powered real estate search engine capable of understanding natural language queries and returning relevant property listings using a hybrid search architecture.
@@ -8,19 +6,19 @@ Example query:
 
 "luxury property with helipad in Punta Cana under 900k"
 
-The system converts the natural language query into structured filters and semantic search signals, then ranks properties based on relevance.
+The system converts natural language queries into structured filters and semantic search signals, then ranks properties based on relevance.
 
 ---
 
 ## Key Features
 
-### 1. Natural Language Query Understanding
+### Natural Language Query Understanding
 Uses an LLM-based intent parser to convert user queries into structured filters such as:
 
 - bedrooms
 - bathrooms
 - price range
-- size
+- property size
 - lot size
 - year built
 - property features
@@ -40,31 +38,31 @@ Example parsed output:
 
 ---
 
-### 2. Hybrid Search Architecture
+### Hybrid Search Architecture
 The search engine combines multiple retrieval techniques:
 
 • Structured SQL filtering (PostgreSQL)
 • Semantic vector similarity search (pgvector)
-• Keyword matching in property titles and descriptions
+• Keyword matching in titles and descriptions
 
-This hybrid approach ensures both precise filtering and semantic understanding of user intent.
+This hybrid architecture provides both precision and semantic understanding.
 
 ---
 
-### 3. Intelligent Ranking Engine
+### Intelligent Ranking Engine
 Results are ranked using a scoring system that considers:
 
-- structured field matches (bedrooms, price, etc.)
+- structured attribute matches
 - semantic similarity to the query
 - feature matches
 - location matches
 - keyword relevance
 
-This produces highly relevant results even when queries are ambiguous.
+This ensures relevant results even when queries are vague.
 
 ---
 
-### 4. Constraint Relaxation
+### Constraint Relaxation
 If no exact matches are found, the system automatically relaxes constraints and returns the closest relevant properties.
 
 Example:
@@ -79,8 +77,8 @@ System response:
 
 ---
 
-### 5. Result Explanation Engine
-Each result includes an explanation describing why it matched the user's query.
+### Result Explanation Engine
+Each property result includes an explanation describing why it matched the query.
 
 Example:
 
@@ -91,7 +89,7 @@ Example:
 ✗ Property does not have solar panels
 ```
 
-This improves transparency and helps users understand how results were selected.
+This improves transparency and helps users understand the results.
 
 ---
 
@@ -122,14 +120,40 @@ Location: Punta Cana
 - PostgreSQL
 - pgvector
 - OpenAI API
+- NumPy
 - Natural Language Processing (NLP)
-- Semantic Search
+
+---
+
+## Project Structure
+
+```
+app/
+ ├── main_pipeline.py
+ ├── intent_parser.py
+ ├── query_processing.py
+ ├── search_repository.py
+ ├── ranking_engine.py
+ ├── explanation_engine.py
+ ├── result_display.py
+ ├── embeddings.py
+ ├── generate_embeddings.py
+ ├── downpayment_calc.py
+ └── config.py
+
+ data/
+ ├── all_properties.json
+ └── oneproperty.json
+
+ README.md
+ requirements.txt
+```
 
 ---
 
 ## System Architecture
 
-Pipeline overview:
+Pipeline Overview:
 
 User Query
 ↓
@@ -149,15 +173,52 @@ Final Results
 
 ---
 
+## Running the Project
+
+### 1. Clone the repository
+
+```
+git clone https://github.com/yourusername/ai-real-estate-search-engine.git
+cd ai-real-estate-search-engine
+```
+
+### 2. Install dependencies
+
+```
+pip install -r requirements.txt
+```
+
+### 3. Configure environment variables
+
+Create a `.env` file with:
+
+```
+OPENAI_API_KEY=your_api_key_here
+```
+
+### 4. Run the search engine
+
+```
+python app/main_pipeline.py
+```
+
+You can then enter queries like:
+
+```
+4 bedroom luxury property in Punta Cana with pool
+```
+
+---
+
 ## Future Improvements
 
 Potential enhancements include:
 
 - synonym expansion (e.g., helipad ↔ heliport)
 - faster ranking using approximate nearest neighbors
-- caching layer for popular queries
-- web interface or API endpoint
-- geospatial location search
+- caching layer for frequent queries
+- web interface or REST API
+- geospatial search for better location matching
 
 ---
 
