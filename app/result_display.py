@@ -1,4 +1,4 @@
-from RealtorDR.app.explanation_engine import generate_explanation
+from app.explanation_engine import generate_explanation
 
 
 def display_property(parsed, keywords, r, reason_header, result_type):

@@ -199,7 +199,7 @@ OPENAI_API_KEY=your_api_key_here
 ### 4. Run the API server
 
 ```
-uvicorn RealtorDR.app.api:app --reload
+uvicorn app.api:app --reload
 ```
 
 The backend exposes a single endpoint:

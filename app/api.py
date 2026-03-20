@@ -5,8 +5,8 @@ load_dotenv()
 
 from fastapi import FastAPI
 from pydantic import BaseModel
-from RealtorDR.app.main_pipeline import run_property_search
-from RealtorDR.app.intent_parser import detect_intent
+from app.main_pipeline import run_property_search
+from app.intent_parser import detect_intent
 
 app = FastAPI()
 

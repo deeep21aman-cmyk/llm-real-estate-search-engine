@@ -1,10 +1,16 @@
-from RealtorDR.app.intent_parser import detect_intent, parse_user_query
-from RealtorDR.app.embeddings import get_embedding
-from RealtorDR.app.search_repository import search_repo, vector_search_repo
-from RealtorDR.app.query_processing import normalize_keywords
-from RealtorDR.app.ranking_engine import rank_results
-from RealtorDR.app.result_display import display_results
-from RealtorDR.app.results_formatter import format_results
+import sys
+from pathlib import Path
+
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from app.intent_parser import detect_intent, parse_user_query
+from app.embeddings import get_embedding
+from app.search_repository import search_repo, vector_search_repo
+from app.query_processing import normalize_keywords
+from app.ranking_engine import rank_results
+from app.result_display import display_results
+from app.results_formatter import format_results
 
 import time
 
@@ -242,7 +248,7 @@ def run_property_search(query):
     return formatted_results
 
 if __name__ == "__main__":
-    query='how safe is dominican'
+    query='3 bedroom'
     intent = detect_intent(query)
 
     if intent == "PROPERTY_SEARCH":

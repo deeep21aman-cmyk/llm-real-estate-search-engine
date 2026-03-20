@@ -1,5 +1,5 @@
 import requests
-from RealtorDR.app.config import PER_PAGE, REQUEST_TIMEOUT, HEADERS, REQUEST_DELAY
+from app.config import PER_PAGE, REQUEST_TIMEOUT, HEADERS, REQUEST_DELAY
 import time
 
 

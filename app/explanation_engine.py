@@ -1,4 +1,4 @@
-from RealtorDR.app.config import IGNORE_EXPLANATION_TERMS
+from app.config import IGNORE_EXPLANATION_TERMS
 
 
 def generate_explanation(parsed, keywords, row, result_type):

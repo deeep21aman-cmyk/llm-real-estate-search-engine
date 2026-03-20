@@ -1,14 +1,10 @@
-import os
 from openai import OpenAI
-from RealtorDR.app.db import get_connection
-from RealtorDR.app.config import OPEN_AI_MODEL
-from RealtorDR.app.embeddings import get_embedding
+from app.db import get_connection
+from app.config import OPEN_AI_MODEL
+from app.embeddings import get_embedding
+from app.openai_env import require_env
 
-OPENAI_API_KEY=os.getenv("OPENAI_API_KEY")
-if not OPENAI_API_KEY:
-    raise Exception("set API KEY")
-
-client=OpenAI(api_key=OPENAI_API_KEY)
+client=OpenAI(api_key=require_env("OPENAI_API_KEY"))
 
 
 ATTRIBUTE_PROMPT = """

@@ -1,13 +1,8 @@
-from RealtorDR.app.config import EMBEDDING_MODEL
+from app.config import EMBEDDING_MODEL
 from openai import OpenAI
-import os
+from app.openai_env import require_env
 
-OPENAI_API_KEY=os.getenv("OPENAI_API_KEY")
-
-if not OPENAI_API_KEY:
-    raise RuntimeError ("set API key")
-    
-client=OpenAI(api_key=OPENAI_API_KEY)
+client=OpenAI(api_key=require_env("OPENAI_API_KEY"))
 
 def embed_chunks(chunks:list[dict])-> list[list[float]]:
     

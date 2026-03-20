@@ -1,6 +1,6 @@
 import re
 from decimal import Decimal
-from RealtorDR.app.db import get_connection
+from app.db import get_connection
 
 
 def extract_down_payment(text, price):

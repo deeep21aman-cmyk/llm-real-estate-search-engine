@@ -1,4 +1,4 @@
-from RealtorDR.app.db import get_connection
+from app.db import get_connection
 
 
 def _vector_similarity_select(query_embedding):

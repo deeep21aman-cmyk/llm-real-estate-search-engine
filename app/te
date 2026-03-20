@@ -1,3 +1,0 @@
-
-from RealtorDR.app.intent_parser import parse_user_query
-print(parse_user_query("3 bedroom near the beach"))

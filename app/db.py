@@ -1,5 +1,7 @@
 import psycopg
-from RealtorDR.app.config import DB_NAME, DB_USER, DB_HOST, DB_PORT
+
+from app.config import DB_NAME, DB_USER, DB_HOST, DB_PORT
+
 
 def get_connection():
     return psycopg.connect(
@@ -33,6 +35,7 @@ def upsert_features(features):
                     )
                 )
     conn.close()
+
 
 def upsert_properties(properties):
     conn = get_connection()
@@ -92,14 +95,15 @@ def upsert_properties(properties):
                         prop["description"],
                         prop["address"],
                     )
-                    
                 )
-                row=cur.fetchone()
-                property_id=row[0]
-                cur.execute("DELETE FROM property_features WHERE property_id=%s",(property_id,))
+                row = cur.fetchone()
+                property_id = row[0]
+                cur.execute("DELETE FROM property_features WHERE property_id=%s", (property_id,))
                 for feature in prop["feature_ids"]:
-                    cur.execute('''INSERT INTO property_features(property_id,feature_id) VALUES (%s,%s)
-                                ''',(property_id,feature))
-
+                    cur.execute(
+                        """INSERT INTO property_features(property_id,feature_id) VALUES (%s,%s)
+                                """,
+                        (property_id, feature)
+                    )
 
     conn.close()
