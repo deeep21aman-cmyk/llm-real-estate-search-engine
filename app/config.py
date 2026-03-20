@@ -1,5 +1,3 @@
-
-
 BASE_API_URL = "https://realtordrc2stg.wpenginepowered.com/wp-json/wp/v2/property"
 FEATURES_API_URL="https://realtordrc2stg.wpenginepowered.com/wp-json/wp/v2/property-features"
 
@@ -12,7 +10,7 @@ DB_PORT = 5432
 OPEN_AI_MODEL="gpt-4.1-mini"
 EMBEDDING_MODEL="text-embedding-3-small"
 
-VECTOR_RESULTS_LIMIT=5
+VECTOR_RESULTS_LIMIT=10
 
 PER_PAGE = 100
 REQUEST_TIMEOUT = 10
@@ -31,5 +29,18 @@ IGNORE_EXPLANATION_TERMS = {
     "apartment",
     "listing",
     "residence",
-    "unit"
+    "unit",
+
+    # directional / vague location words
+    "near",
+    "nearby",
+    "around",
+    "close",
+    "by",
+
+    # generic real estate terms that add no value in explanations
+    "estate",
+    "realty",
+    "sale",
+    "place"
 }

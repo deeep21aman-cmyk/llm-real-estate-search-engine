@@ -196,16 +196,24 @@ Create a `.env` file with:
 OPENAI_API_KEY=your_api_key_here
 ```
 
-### 4. Run the search engine
+### 4. Run the API server
 
 ```
-python app/main_pipeline.py
+uvicorn RealtorDR.app.api:app --reload
 ```
 
-You can then enter queries like:
+The backend exposes a single endpoint:
 
 ```
-4 bedroom luxury property in Punta Cana with pool
+POST /chat
+```
+
+Example request:
+
+```
+curl -X POST http://127.0.0.1:8000/chat \
+  -H "Content-Type: application/json" \
+  -d '{"query":"4 bedroom luxury property in Punta Cana with pool"}'
 ```
 
 ---

@@ -1,7 +1,7 @@
-from config import IGNORE_EXPLANATION_TERMS
+from RealtorDR.app.config import IGNORE_EXPLANATION_TERMS
 
 
-def generate_explanation(parsed, keywords, row):
+def generate_explanation(parsed, keywords, row, result_type):
 
     reasons = []
 
@@ -42,8 +42,6 @@ def generate_explanation(parsed, keywords, row):
         loc = parsed["location"].lower()
         if loc in address:
             reasons.append(f"✓ Property is located in {parsed['location'].title()}")
-        else:
-            reasons.append(f"✗ Property is not located in {parsed['location'].title()}")
 
     elif parsed.get("location_keywords"):
         matched_location = False
@@ -53,18 +51,12 @@ def generate_explanation(parsed, keywords, row):
                 matched_location = True
                 break
 
-        if not matched_location:
-            locations = ", ".join([l.title() for l in parsed["location_keywords"]])
-            reasons.append(f"✗ Property is not located in {locations}")
-
     # -----------------------
     # Feature explanations
     # -----------------------
     for feature in parsed["feature_names"]:
         if feature in embedding_text or feature in title:
             reasons.append(f"✓ Property has {feature}")
-        else:
-            reasons.append(f"✗ Property does not have {feature}")
 
     # -----------------------
     # Keyword explanations
@@ -83,8 +75,26 @@ def generate_explanation(parsed, keywords, row):
         if parsed.get("location_keywords") and word in parsed["location_keywords"]:
             continue
 
+        # direct keyword match
         if word in embedding_text or word in title:
             matched_keywords.append(word)
+
+        # semantic beach/ocean handling
+        elif "beach" in word:
+            if (
+                "beach" in embedding_text
+                or "beach" in title
+                or "beachfront" in embedding_text
+                or "beachfront" in title
+                or "ocean" in embedding_text
+                or "ocean" in title
+                or "ocean view" in embedding_text
+                or "ocean view" in title
+            ):
+                matched_keywords.append(word)
+            else:
+                missing_keywords.append(word)
+
         else:
             missing_keywords.append(word)
 
@@ -92,9 +102,11 @@ def generate_explanation(parsed, keywords, row):
         keywords_str = ", ".join(matched_keywords)
         reasons.append(f"✓ Property matches your search for {keywords_str}")
 
-    if missing_keywords:
+    if missing_keywords and result_type == "additional":
         missing_str = ", ".join(missing_keywords)
-        reasons.append(f"✗ Property does not match your search for {missing_str}")
+        reasons.append(
+            f"✓ Property appears semantically related to your search for {missing_str}"
+        )
 
     # -----------------------
     # Down payment percent

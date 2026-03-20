@@ -1,7 +1,8 @@
 import os
 from openai import OpenAI
-from db import get_connection
-from config import EMBEDDING_MODEL,OPEN_AI_MODEL
+from RealtorDR.app.db import get_connection
+from RealtorDR.app.config import OPEN_AI_MODEL
+from RealtorDR.app.embeddings import get_embedding
 
 OPENAI_API_KEY=os.getenv("OPENAI_API_KEY")
 if not OPENAI_API_KEY:
@@ -192,10 +193,6 @@ down payment: 20%,
 payment plan: $5000, 20%, 30%, 30%, 20%
 """
 
-def get_embedding(text):
-    response=client.embeddings.create(model=EMBEDDING_MODEL,input=text)
-    return response.data[0].embedding
-
 def cleanup_text(raw_text):
     
     response = client.responses.create(
@@ -224,9 +221,11 @@ bedrooms,
 bathrooms,
 size,
 lot_size,
-year_built
+year_built,
+embedding_text
 FROM properties
 WHERE embedding_text IS NULL
+   OR description_embedding IS NULL
                 ''')
             rows=cur.fetchall()
                         
@@ -241,6 +240,7 @@ WHERE embedding_text IS NULL
                 size=row[6]
                 lot_size=row[7]
                 year_built=row[8]
+                existing_embedding_text=row[9]
                 cur.execute("""
 SELECT f.name
 FROM property_features pf
@@ -265,14 +265,22 @@ Features: {features_text}
 Description:
 {description}
 """
-                cleaned_text=cleanup_text(raw_text)
+                cleaned_text = existing_embedding_text
+                if not cleaned_text:
+                    cleaned_text = cleanup_text(raw_text)
+
+                embedding = get_embedding(cleaned_text)
                 cur.execute(
-    "UPDATE properties SET embedding_text=%s WHERE id=%s",
-    (cleaned_text, property_id)
-)
-                #embedding=get_embedding(cleaned_text)
-               #cur.execute("UPDATE properties SET description_embedding=%s WHERE  id=%s",(embedding,property_id))
+                    """
+                    UPDATE properties
+                    SET embedding_text = %s,
+                        description_embedding = %s
+                    WHERE id = %s
+                    """,
+                    (cleaned_text, embedding, property_id)
+                )
             
     conn.close()
 
-generate_embeddings()
+if __name__ == "__main__":
+    generate_embeddings()

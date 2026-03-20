@@ -3,12 +3,14 @@ def normalize_keywords(unknown_terms):
     keywords = []
 
     for term in unknown_terms:
-        words = term.lower().split()
 
-        for word in words:
-            word = word.strip()
+        cleaned = term.lower().strip()
 
-            if len(word) > 2:
-                keywords.append(word)
+        # ignore very small meaningless terms
+        if len(cleaned) <= 2:
+            continue
 
+        keywords.append(cleaned)
+
+    # remove duplicates while preserving phrases
     return list(set(keywords))

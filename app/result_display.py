@@ -1,7 +1,7 @@
-from explanation_engine import generate_explanation
+from RealtorDR.app.explanation_engine import generate_explanation
 
 
-def display_property(parsed, keywords, r, reason_header):
+def display_property(parsed, keywords, r, reason_header, result_type):
 
     title = r[1]
     price = r[2]
@@ -20,7 +20,7 @@ def display_property(parsed, keywords, r, reason_header):
     print(f"Address: {address}")
     print(f"Link: {link}\n")
 
-    reasons = generate_explanation(parsed, keywords, r)
+    reasons = generate_explanation(parsed, keywords, r, result_type)
 
     if reasons:
         print(reason_header)
@@ -38,14 +38,14 @@ def display_results(parsed, keywords, top_results, additional):
         print("\nTop matching results:\n")
 
         for r in top_results:
-            display_property(parsed, keywords, r, "Why this property matched:")
+            display_property(parsed, keywords, r, "Why this property matched:", "top")
 
         if additional:
 
             print("\nOther similar properties you may be interested in:\n")
 
             for r in additional:
-                display_property(parsed, keywords, r, "Why this property might interest you:")
+                display_property(parsed, keywords, r, "Why this property might interest you:", "additional")
 
     else:
 
@@ -53,4 +53,4 @@ def display_results(parsed, keywords, top_results, additional):
         print("But here are some other properties you may be interested in:\n")
 
         for r in additional:
-            display_property(parsed, keywords, r, "Why this property might interest you:")
+            display_property(parsed, keywords, r, "Why this property might interest you:", "additional")

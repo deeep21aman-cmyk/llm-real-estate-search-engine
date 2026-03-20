@@ -1,8 +1,5 @@
 import psycopg
-from config import DB_NAME, DB_USER, DB_HOST, DB_PORT
-
-import psycopg
-from config import DB_NAME, DB_USER, DB_HOST, DB_PORT
+from RealtorDR.app.config import DB_NAME, DB_USER, DB_HOST, DB_PORT
 
 def get_connection():
     return psycopg.connect(

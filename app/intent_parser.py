@@ -1,14 +1,25 @@
-from db import get_connection
+from RealtorDR.app.db import get_connection
 from openai import OpenAI
 import os
-from config import OPEN_AI_MODEL
+from RealtorDR.app.config import OPEN_AI_MODEL
 import json
+from functools import lru_cache
 
 OPENAI_API_KEY=os.getenv("OPENAI_API_KEY")
 if not OPENAI_API_KEY:
     raise Exception("set API KEY")
 
 client=OpenAI(api_key=OPENAI_API_KEY)
+
+@lru_cache(maxsize=1)
+def get_cached_feature_names():
+    conn=get_connection()
+    with conn.cursor() as cur:
+        cur.execute("SELECT name FROM features WHERE count>0 ORDER BY name")
+        db_feature_names=tuple(cur.fetchall())
+    conn.close()
+    return db_feature_names
+
 def validate_llm_output(db_feature_names, output_dict):
 
     expected_keys = {
@@ -225,11 +236,7 @@ def validate_llm_output(db_feature_names, output_dict):
     return output_dict
 
 def parse_user_query(user_query: str):
-    conn=get_connection()
-    with conn.cursor() as cur:
-        cur.execute("SELECT name FROM features WHERE count>0 ORDER BY name")
-        db_feature_names=cur.fetchall()
-    conn.close()
+    db_feature_names=list(get_cached_feature_names())
     features = '\n'.join(row[0] for row in db_feature_names)
     feature_list_text = features
 
@@ -294,166 +301,55 @@ GENERAL RULES
 
 --------------------------------------------------
 
-GENERIC PROPERTY WORDS
+LOCATION RULES
 
-Users often include generic words that simply describe the type of thing being searched.
+Location refers ONLY to geographic place names such as:
 
-These words are NOT meaningful search attributes and must NOT appear in unknown_terms.
+• cities
+• neighborhoods
+• regions
+• districts
+• well-known real estate areas
 
-Ignore these words completely:
+Examples of valid locations:
 
-house
-home
-property
-properties
-real estate
-listing
-place
-residence
-unit
+punta cana
+cap cana
+sosua
+cabarete
+bavaro
+puerto plata
+santo domingo
+
+These should populate the "location" field.
 
 Example:
+"villa in Punta Cana"
+→ location = "punta cana"
 
-User query:
-"luxury house with pool"
+Do NOT treat environmental or descriptive terms as locations.
 
-Correct output:
-feature_names = ["pool"]
-unknown_terms = ["luxury"]
+The following are NOT locations:
 
-NOT:
-unknown_terms = ["luxury","house"]
+beach
+ocean
+ocean view
+beachfront
+airport
+marina
+golf course
+park
+shopping area
+near beach
+close to ocean
 
---------------------------------------------------
+These must NOT populate the "location" field.
 
-STRUCTURAL WORDS
+Instead:
+• If they represent a property feature → map to feature_names
+• Otherwise place them in unknown_terms
 
-Words that refer to structured filters must NEVER appear in unknown_terms.
-
-These include:
-
-bedroom
-bedrooms
-bathroom
-bathrooms
-price
-size
-lot
-square feet
-sqft
-year built
-down payment
-deposit
-
-These concepts must populate the correct structured fields instead.
-
---------------------------------------------------
-
-BEDROOM RULES
-
-Exact value:
-"3 bedrooms", "exactly 3 bedrooms" → bedrooms = 3
-
-Minimum:
-"3+ bedrooms", "at least 3 bedrooms", "minimum 3 bedrooms" → min_bedrooms = 3
-
-Maximum:
-"up to 4 bedrooms", "no more than 4 bedrooms", "max 4 bedrooms" → max_bedrooms = 4
-
-Range:
-"between 2 and 4 bedrooms" → min_bedrooms = 2 and max_bedrooms = 4
-
-If bedrooms is set, min_bedrooms and max_bedrooms must be null.
-
---------------------------------------------------
-
-BATHROOM RULES
-
-Apply the same logic as bedrooms for bathrooms.
-
---------------------------------------------------
-
-PRICE RULES
-
-"over 500k", "above 500k", "at least 500k" → min_price  
-"under 800k", "below 800k", "max 800k" → max_price  
-"between 400k and 600k" → min_price and max_price
-
---------------------------------------------------
-
-SIZE RULES
-
-Interior size mentions (sqft, square feet) → min_size or max_size
-
-Lot or land size mentions → min_lot_size or max_lot_size
-
-Apply the same comparison logic as price.
-
---------------------------------------------------
-
-YEAR BUILT RULES
-
-"built after 2015" → min_year_built = 2016  
-"built before 2000" → max_year_built = 1999  
-"built between 2000 and 2010" → min_year_built and max_year_built
-
---------------------------------------------------
-
-DISCOUNT RULE
-
-If the query mentions discounts, deals, price reductions, or reduced price  
-→ is_discounted = true
-
---------------------------------------------------
-
-DOWN PAYMENT RULES
-
-Users may search for properties based on required down payment.
-
-Extract these values into the correct fields.
-
-DOWN PAYMENT PERCENT
-
-"20% down payment"
-→ min_down_payment_percent = 20
-→ max_down_payment_percent = 20
-
-"10% down homes"
-→ min_down_payment_percent = 10
-→ max_down_payment_percent = 10
-
-"low down payment homes"
-→ max_down_payment_percent = 10
-
-"under 20% down payment"
-→ max_down_payment_percent = 20
-
-"at least 25% down payment"
-→ min_down_payment_percent = 25
-
-DOWN PAYMENT AMOUNT
-
-"$5,000 down payment"
-→ min_down_payment_amount = 5000
-→ max_down_payment_amount = 5000
-
-"properties requiring $50k down"
-→ min_down_payment_amount = 50000
-→ max_down_payment_amount = 50000
-
-"down payment under $20k"
-→ max_down_payment_amount = 20000
-
-"down payment above $100k"
-→ min_down_payment_amount = 100000
-
-If both percent and amount are mentioned, populate both fields.
-
-Examples:
-
-"$5k deposit and 10% down"
-→ min_down_payment_amount = 5000
-→ min_down_payment_percent = 10
+location_keywords should only contain additional geographic words that help identify a place (for example "bavaro", "cap", "cana").
 
 --------------------------------------------------
 
@@ -505,11 +401,12 @@ then it must be placed in "unknown_terms".
 
 Examples:
 
-luxury  
-modern  
-investment property  
-ocean view  
-near beach  
+luxury
+modern
+investment
+near beach
+close to ocean
+walking distance to beach
 
 Down payment phrases must NOT appear in unknown_terms.
 
@@ -567,3 +464,74 @@ Example Output
     
 
     return validate_llm_output(db_feature_names,output_dict)
+
+# ===== INTENT CLASSIFIER =====
+def detect_intent(user_query: str) -> str:
+    prompt = """
+Classify the user query into ONE category:
+
+1. PROPERTY_SEARCH → the user wants to find, browse, or get property listings
+2. KNOWLEDGE_SEARCH → the user is asking a question or seeking information
+
+Guidelines:
+
+- Choose PROPERTY_SEARCH if the user is describing a property they want:
+  (examples: bedrooms, price, location, features, type of property)
+
+- Choose PROPERTY_SEARCH if the user is trying to see options or listings, even if they mention goals like investment
+
+- Choose KNOWLEDGE_SEARCH if the user is asking for explanations, advice, or general information
+
+- If the query includes both (e.g., property + question), prioritize PROPERTY_SEARCH
+
+Examples:
+
+"3 bedroom condo in Punta Cana"
+→ PROPERTY_SEARCH
+
+"villa with pool under 300k"
+→ PROPERTY_SEARCH
+
+"3 bedroom investment property in Punta Cana"
+→ PROPERTY_SEARCH
+
+"is it a good investment?"
+→ KNOWLEDGE_SEARCH
+
+"how does financing work?"
+→ KNOWLEDGE_SEARCH
+
+"what areas are best for families?"
+→ KNOWLEDGE_SEARCH
+
+"show me beachfront condos"
+→ PROPERTY_SEARCH
+
+Query:
+{{ $json.message }}
+
+Answer ONLY one word:
+PROPERTY_SEARCH or KNOWLEDGE_SEARCH
+"""
+
+    response = client.responses.create(
+        model=OPEN_AI_MODEL,
+        temperature=0,
+        input=[
+            {
+                "role": "system",
+                "content": [{"type": "input_text", "text": prompt}]
+            },
+            {
+                "role": "user",
+                "content": [{"type": "input_text", "text": user_query}]
+            }
+        ]
+    )
+
+    intent = response.output_text.strip().upper()
+
+    if intent not in ["PROPERTY_SEARCH", "KNOWLEDGE_SEARCH"]:
+        return "PROPERTY_SEARCH"
+
+    return intent

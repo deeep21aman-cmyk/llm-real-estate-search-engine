@@ -1,4 +1,19 @@
-from db import get_connection
+from RealtorDR.app.db import get_connection
+
+
+def _vector_similarity_select(query_embedding):
+    if query_embedding is None:
+        return "0.0 AS vector_similarity", []
+
+    return (
+        """
+        CASE
+            WHEN p.description_embedding IS NULL THEN 0.0
+            ELSE 1 - (p.description_embedding <=> %s::vector)
+        END AS vector_similarity
+        """,
+        [query_embedding],
+    )
 
 
 def search_repo(bedrooms=None,
@@ -27,7 +42,8 @@ def search_repo(bedrooms=None,
                 location_keywords=None,
 
                 feature_names=None,
-                keywords=None):
+                keywords=None,
+                query_embedding=None):
 
     conn = get_connection()
     conditions = []
@@ -38,7 +54,9 @@ def search_repo(bedrooms=None,
     if feature_names is None:
         feature_names = []
 
-    base_query = '''
+    vector_similarity_sql, vector_params = _vector_similarity_select(query_embedding)
+
+    base_query = f'''
     SELECT DISTINCT
         p.id,
         p.title,
@@ -52,7 +70,8 @@ def search_repo(bedrooms=None,
         p.description_embedding,
         down_payment_amount,
         down_payment_percent,
-        {match_score}
+        {{match_score}},
+        {vector_similarity_sql}
     FROM properties p
     '''
 
@@ -238,29 +257,26 @@ def search_repo(bedrooms=None,
     if feature_names and len(feature_names) > 0:
         for f in feature_names:
             or_conditions.append(
-                "(LOWER(f.name) = %s OR LOWER(p.embedding_text) ILIKE %s OR LOWER(p.title) ILIKE %s)"
+                "(LOWER(f.name) = %s OR LOWER(p.title) ILIKE %s)"
             )
             parameters.append(f.lower())
             parameters.append(f"%{f.lower()}%")
-            parameters.append(f"%{f.lower()}%")
             match_score_parts.append(
-                "CASE WHEN LOWER(p.embedding_text) ILIKE %s OR LOWER(p.title) ILIKE %s OR LOWER(p.address) ILIKE %s THEN 1 ELSE 0 END"
+                "CASE WHEN LOWER(f.name) = %s OR LOWER(p.title) ILIKE %s THEN 1 ELSE 0 END"
             )
-            match_score_params.append(f"%{f.lower()}%")
-            match_score_params.append(f"%{f.lower()}%")
+            match_score_params.append(f.lower())
             match_score_params.append(f"%{f.lower()}%")
 
     if keywords:
         for word in keywords:
             or_conditions.append(
-                "(LOWER(p.embedding_text) ILIKE %s OR LOWER(p.title) ILIKE %s)"
+                "(LOWER(p.title) ILIKE %s OR LOWER(p.address) ILIKE %s)"
             )
             parameters.append(f"%{word.lower()}%")
             parameters.append(f"%{word.lower()}%")
             match_score_parts.append(
-                "CASE WHEN LOWER(p.embedding_text) ILIKE %s OR LOWER(p.title) ILIKE %s OR LOWER(p.address) ILIKE %s THEN 1 ELSE 0 END"
+                "CASE WHEN LOWER(p.title) ILIKE %s OR LOWER(p.address) ILIKE %s THEN 1 ELSE 0 END"
             )
-            match_score_params.append(f"%{word.lower()}%")
             match_score_params.append(f"%{word.lower()}%")
             match_score_params.append(f"%{word.lower()}%")
 
@@ -274,7 +290,7 @@ def search_repo(bedrooms=None,
 
     base_query = base_query.replace("{match_score}", f"({match_score_sql}) AS match_score")
 
-    parameters = match_score_params + parameters
+    parameters = match_score_params + vector_params + parameters
 
     # -------------------------------
     # APPLY CONDITIONS
@@ -283,9 +299,17 @@ def search_repo(bedrooms=None,
     if conditions:
         base_query += " WHERE " + " AND ".join(conditions)
 
-    base_query += " ORDER BY match_score DESC LIMIT 20"
+    base_query = f"""
+    SELECT *,
+           (match_score + (vector_similarity * 0.5)) AS final_score
+    FROM (
+    {base_query}
+    ) AS scored_properties
+    ORDER BY final_score DESC
+    LIMIT 20
+    """
 
-    #print(base_query)
+    print(base_query)
     #print(parameters)
 
     with conn:
@@ -331,9 +355,19 @@ def vector_search_repo(query_embedding,
         p.link,
         p.embedding_text,
         p.description_embedding,
-        down_payment_amount,down_payment_percent
+        down_payment_amount,
+        down_payment_percent,
+        0 AS match_score,
+        CASE
+            WHEN p.description_embedding IS NULL THEN 0.0
+            ELSE 1 - (p.description_embedding <=> %s::vector)
+        END AS vector_similarity
     FROM properties p
     """
+
+    parameters.append(query_embedding)
+
+    conditions.append("p.description_embedding IS NOT NULL")
 
     if bedrooms is not None:
         conditions.append("p.bedrooms = %s")
@@ -403,34 +437,11 @@ def vector_search_repo(query_embedding,
     """
 
     parameters.append(query_embedding)
+
     with conn:
         with conn.cursor() as cur:
             cur.execute(base_query, parameters)
             rows = cur.fetchall()
-
-            # If strict filtered vector search returns nothing, relax constraints
-            if not rows:
-                relaxed_query = """
-                SELECT
-                    p.id,
-                    p.title,
-                    p.price,
-                    p.bedrooms,
-                    p.bathrooms,
-                    p.size,
-                    p.address,
-                    p.link,
-                    p.embedding_text,
-                    p.description_embedding,
-                    down_payment_amount,
-                    down_payment_percent
-                FROM properties p
-                ORDER BY p.description_embedding <-> %s::vector
-                LIMIT 10
-                """
-
-                cur.execute(relaxed_query, [query_embedding])
-                rows = cur.fetchall()
 
     conn.close()
 
