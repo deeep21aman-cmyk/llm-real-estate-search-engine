@@ -128,7 +128,7 @@ curl -X POST http://127.0.0.1:8000/chat \
 ## 🧪 Example Query
 
 ```
-"2 bedroom condo under 600k with parking in Toronto"
+"2 bedroom condo under 600k in punta cana"
 ```
 
 ### Output includes:
