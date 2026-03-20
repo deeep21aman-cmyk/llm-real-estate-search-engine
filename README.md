@@ -1,215 +1,122 @@
-# AI Real Estate Search Engine
+# 🏡 RealtorDR — AI-Powered Real Estate Search Engine
 
-An AI-powered real estate search engine capable of understanding natural language queries and returning relevant property listings using a hybrid search architecture.
+RealtorDR is an AI-powered real estate search system that lets users query property listings using natural language instead of rigid filters.
 
-Example query:
-
-"luxury property with helipad in Punta Cana under 900k"
-
-The system converts natural language queries into structured filters and semantic search signals, then ranks properties based on relevance.
+It combines **LLM-based intent parsing**, **structured database filtering**, and **semantic vector search** to deliver highly relevant results.
 
 ---
 
-## Key Features
+## 🚀 Features
 
-### Natural Language Query Understanding
-Uses an LLM-based intent parser to convert user queries into structured filters such as:
+- 🔍 Natural language search  
+  _Example: “3 bedroom house under 800k near downtown with garage”_
 
-- bedrooms
-- bathrooms
-- price range
-- property size
-- lot size
-- year built
-- property features
-- location
-- down payment requirements
-
-Example parsed output:
-
-```
-{
-  "min_bedrooms": 3,
-  "max_price": 900000,
-  "feature_names": ["helipad"],
-  "location": "punta cana"
-}
-```
+- 🧠 AI intent parsing → converts text into structured filters
+- ⚡ Hybrid search:
+  - Structured filtering (price, beds, baths, location)
+  - Semantic search (embeddings + vector similarity)
+- 🏆 Custom ranking engine for best-match results
+- 💬 Explanation engine for transparent results
+- 📊 Down payment calculator support
 
 ---
 
-### Hybrid Search Architecture
-The search engine combines multiple retrieval techniques:
-
-• Structured SQL filtering (PostgreSQL)
-• Semantic vector similarity search (pgvector)
-• Keyword matching in titles and descriptions
-
-This hybrid architecture provides both precision and semantic understanding.
-
----
-
-### Intelligent Ranking Engine
-Results are ranked using a scoring system that considers:
-
-- structured attribute matches
-- semantic similarity to the query
-- feature matches
-- location matches
-- keyword relevance
-
-This ensures relevant results even when queries are vague.
-
----
-
-### Constraint Relaxation
-If no exact matches are found, the system automatically relaxes constraints and returns the closest relevant properties.
-
-Example:
-
-User query:
-
-"20 bedroom house under 200k"
-
-System response:
-
-"We couldn't find an exact match, but here are similar properties you may be interested in."
-
----
-
-### Result Explanation Engine
-Each property result includes an explanation describing why it matched the query.
-
-Example:
+## 🧠 System Architecture
 
 ```
-✓ Property has 4 bedrooms as requested
-✓ Property is located in Punta Cana
-✓ Property matches your search for luxury
-✗ Property does not have solar panels
-```
-
-This improves transparency and helps users understand the results.
-
----
-
-## Example Query
-
-```
-What properties are you interested in?
-> luxury villa with helipad in Punta Cana
-```
-
-Example output:
-
-```
-Title: Expansive Luxury Villa With Helipad
-Price: $2,900,000
-Location: Punta Cana
-
-✓ Property has a helipad
-✓ Property matches your search for luxury
-✓ Property located in Punta Cana
-```
-
----
-
-## Tech Stack
-
-- Python
-- PostgreSQL
-- pgvector
-- OpenAI API
-- NumPy
-- Natural Language Processing (NLP)
-
----
-
-## Project Structure
-
-```
-app/
- ├── main_pipeline.py
- ├── intent_parser.py
- ├── query_processing.py
- ├── search_repository.py
- ├── ranking_engine.py
- ├── explanation_engine.py
- ├── result_display.py
- ├── embeddings.py
- ├── generate_embeddings.py
- ├── downpayment_calc.py
- └── config.py
-
- data/
- ├── all_properties.json
- └── oneproperty.json
-
- README.md
- requirements.txt
-```
-
----
-
-## System Architecture
-
-Pipeline Overview:
-
 User Query
-↓
+   ↓
 Intent Parser (LLM)
-↓
-Query Processing
-↓
-Structured Search (SQL)
-↓
-Vector Similarity Search
-↓
+   ↓
+Query Processing / Normalization
+   ↓
+Hybrid Search:
+   ├── Structured DB Query
+   └── Vector Similarity Search
+   ↓
 Ranking Engine
-↓
-Explanation Engine
-↓
-Final Results
+   ↓
+Results Formatter + Explanation Engine
+   ↓
+Final Output
+```
 
 ---
 
-## Running the Project
-
-### 1. Clone the repository
+## 📂 Project Structure
 
 ```
-git clone https://github.com/yourusername/ai-real-estate-search-engine.git
-cd ai-real-estate-search-engine
+RealtorDR/
+├── app/
+│   ├── api.py
+│   ├── config.py
+│   ├── db.py
+│   ├── embeddings.py
+│   ├── intent_parser.py
+│   ├── query_processing.py
+│   ├── search_repository.py
+│   ├── ranking_engine.py
+│   ├── results_formatter.py
+│   ├── explanation_engine.py
+│   ├── main_pipeline.py
+│   └── ...
+├── data/
+│   ├── all_properties.json
+│   └── oneproperty.json
+├── requirements.txt
+└── .env
 ```
 
-### 2. Install dependencies
+---
 
+## ⚙️ Setup
+
+### 1. Clone the repo
+```
+git clone <your-repo-url>
+cd RealtorDR
+```
+
+### 2. Create virtual environment
+```
+python3 -m venv venv
+source venv/bin/activate   # Mac/Linux
+```
+
+### 3. Install dependencies
 ```
 pip install -r requirements.txt
 ```
 
-### 3. Configure environment variables
+### 4. Configure environment variables
 
-Create a `.env` file with:
+Create a `.env` file:
 
 ```
-OPENAI_API_KEY=your_api_key_here
+OPENAI_API_KEY=your_key_here
+DATABASE_URL=your_db_url
 ```
 
-### 4. Run the API server
+---
 
+## ▶️ Run the System
+
+### Option 1: Run pipeline directly
+```
+python -m app.main_pipeline
+```
+
+### Option 2: Run API server
 ```
 uvicorn app.api:app --reload
 ```
 
-The backend exposes a single endpoint:
-
+Endpoint:
 ```
 POST /chat
 ```
 
 Example request:
-
 ```
 curl -X POST http://127.0.0.1:8000/chat \
   -H "Content-Type: application/json" \
@@ -218,18 +125,47 @@ curl -X POST http://127.0.0.1:8000/chat \
 
 ---
 
-## Future Improvements
+## 🧪 Example Query
 
-Potential enhancements include:
+```
+"2 bedroom condo under 600k with parking in Toronto"
+```
 
-- synonym expansion (e.g., helipad ↔ heliport)
-- faster ranking using approximate nearest neighbors
-- caching layer for frequent queries
-- web interface or REST API
-- geospatial search for better location matching
+### Output includes:
+- Ranked property results
+- Match explanations
+- Structured attributes
 
 ---
 
-## Author
+## 🛠 Tech Stack
+
+- Python
+- OpenAI (LLM + embeddings)
+- PostgreSQL
+- pgvector
+- NumPy
+
+---
+
+## 🎯 Key Design Principles
+
+- Hybrid search > keyword-only search  
+- Explainable results (not black-box AI)  
+- Modular architecture for scalability  
+- Fast iteration over perfect abstraction  
+
+---
+
+## 🚧 Future Improvements
+
+- Real-time MLS integration  
+- Caching layer for faster queries  
+- Advanced ranking signals (user preferences)  
+- UI layer (web/mobile)  
+
+---
+
+## 👤 Author
 
 Amandeep Kaur
