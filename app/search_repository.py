@@ -1,4 +1,10 @@
+import logging
+
 from app.db import get_connection
+from app.embeddings import to_vector
+
+
+logger = logging.getLogger(__name__)
 
 
 def _vector_similarity_select(query_embedding):
@@ -14,6 +20,31 @@ def _vector_similarity_select(query_embedding):
         """,
         [query_embedding],
     )
+
+
+def _text_match_score_parts(terms, weight, include_feature_name=False):
+    score_parts = []
+    score_params = []
+
+    for term in terms or []:
+        pattern = f"%{term.lower()}%"
+        clauses = [
+            "LOWER(p.title) ILIKE %s",
+            "LOWER(p.address) ILIKE %s",
+            "LOWER(COALESCE(p.embedding_text, '')) ILIKE %s",
+        ]
+        params = [pattern, pattern, pattern]
+
+        if include_feature_name:
+            clauses.append("LOWER(COALESCE(f.name, '')) ILIKE %s")
+            params.append(pattern)
+
+        score_parts.append(
+            f"CASE WHEN {' OR '.join(clauses)} THEN {weight} ELSE 0 END"
+        )
+        score_params.extend(params)
+
+    return score_parts, score_params
 
 
 def search_repo(bedrooms=None,
@@ -43,7 +74,8 @@ def search_repo(bedrooms=None,
 
                 feature_names=None,
                 keywords=None,
-                query_embedding=None):
+                query_embedding=None,
+                limit=30):
 
     conn = get_connection()
     conditions = []
@@ -54,7 +86,8 @@ def search_repo(bedrooms=None,
     if feature_names is None:
         feature_names = []
 
-    vector_similarity_sql, vector_params = _vector_similarity_select(query_embedding)
+    query_vector = to_vector(query_embedding)
+    vector_similarity_sql, vector_params = _vector_similarity_select(query_vector)
 
     base_query = f'''
     SELECT DISTINCT
@@ -252,36 +285,23 @@ def search_repo(bedrooms=None,
     # FEATURE + KEYWORD SEARCH
     # ---------------------------------------------------
 
-    or_conditions = []
-
     if feature_names and len(feature_names) > 0:
-        for f in feature_names:
-            or_conditions.append(
-                "(LOWER(f.name) = %s OR LOWER(p.title) ILIKE %s)"
-            )
-            parameters.append(f.lower())
-            parameters.append(f"%{f.lower()}%")
-            match_score_parts.append(
-                "CASE WHEN LOWER(f.name) = %s OR LOWER(p.title) ILIKE %s THEN 1 ELSE 0 END"
-            )
-            match_score_params.append(f.lower())
-            match_score_params.append(f"%{f.lower()}%")
+        feature_score_parts, feature_score_params = _text_match_score_parts(
+            feature_names,
+            weight=2.5,
+            include_feature_name=True,
+        )
+        match_score_parts.extend(feature_score_parts)
+        match_score_params.extend(feature_score_params)
 
     if keywords:
-        for word in keywords:
-            or_conditions.append(
-                "(LOWER(p.title) ILIKE %s OR LOWER(p.address) ILIKE %s)"
-            )
-            parameters.append(f"%{word.lower()}%")
-            parameters.append(f"%{word.lower()}%")
-            match_score_parts.append(
-                "CASE WHEN LOWER(p.title) ILIKE %s OR LOWER(p.address) ILIKE %s THEN 1 ELSE 0 END"
-            )
-            match_score_params.append(f"%{word.lower()}%")
-            match_score_params.append(f"%{word.lower()}%")
-
-    if or_conditions:
-        conditions.append("(" + " OR ".join(or_conditions) + ")")
+        keyword_score_parts, keyword_score_params = _text_match_score_parts(
+            keywords,
+            weight=1.75,
+            include_feature_name=True,
+        )
+        match_score_parts.extend(keyword_score_parts)
+        match_score_params.extend(keyword_score_params)
 
     if match_score_parts:
         match_score_sql = " + ".join(match_score_parts)
@@ -301,16 +321,17 @@ def search_repo(bedrooms=None,
 
     base_query = f"""
     SELECT *,
-           (match_score + (vector_similarity * 0.5)) AS final_score
+           (match_score + (vector_similarity * 2.0)) AS final_score
     FROM (
     {base_query}
     ) AS scored_properties
     ORDER BY final_score DESC
-    LIMIT 20
+    LIMIT %s
     """
 
-    print(base_query)
-    #print(parameters)
+    parameters.append(limit)
+
+    logger.info("Executing structured property query")
 
     with conn:
         with conn.cursor() as cur:
@@ -337,7 +358,9 @@ def vector_search_repo(query_embedding,
                        max_lot_size=None,
                        min_year_built=None,
                        max_year_built=None,
-                       is_discounted=None):
+                       is_discounted=None,
+                       location=None,
+                       limit=12):
 
     conn = get_connection()
     conditions = []
@@ -365,7 +388,8 @@ def vector_search_repo(query_embedding,
     FROM properties p
     """
 
-    parameters.append(query_embedding)
+    query_vector = to_vector(query_embedding)
+    parameters.append(query_vector)
 
     conditions.append("p.description_embedding IS NOT NULL")
 
@@ -428,15 +452,21 @@ def vector_search_repo(query_embedding,
     if is_discounted is True:
         conditions.append("p.old_price IS NOT NULL AND p.old_price > p.price")
 
+    if location:
+        conditions.append("LOWER(p.address) ILIKE %s")
+        parameters.append(f"%{location.lower()}%")
+
     if conditions:
         base_query += " WHERE " + " AND ".join(conditions)
 
     base_query += """
     ORDER BY p.description_embedding <-> %s::vector
-    LIMIT 10
+    LIMIT %s
     """
 
-    parameters.append(query_embedding)
+    logger.info("Executing vector property query")
+    parameters.append(query_vector)
+    parameters.append(limit)
 
     with conn:
         with conn.cursor() as cur:

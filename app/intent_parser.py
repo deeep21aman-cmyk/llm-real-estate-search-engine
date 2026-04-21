@@ -1,18 +1,23 @@
-from app.db import get_connection
-from openai import OpenAI
-from app.config import OPEN_AI_MODEL
 import json
+import logging
 from functools import lru_cache
-from app.openai_env import require_env
 
-client=OpenAI(api_key=require_env("OPENAI_API_KEY"))
+from openai import APITimeoutError, OpenAI, OpenAIError
+
+from app.config import OPEN_AI_MODEL, OPENAI_TIMEOUT_SECONDS
+from app.db import get_connection
+from app.openai_env import require_env
+from app.service_errors import ExternalServiceError
+
+logger = logging.getLogger(__name__)
+client = OpenAI(api_key=require_env("OPENAI_API_KEY"), timeout=OPENAI_TIMEOUT_SECONDS)
 
 @lru_cache(maxsize=1)
 def get_cached_feature_names():
-    conn=get_connection()
+    conn = get_connection()
     with conn.cursor() as cur:
         cur.execute("SELECT name FROM features WHERE count>0 ORDER BY name")
-        db_feature_names=tuple(cur.fetchall())
+        db_feature_names = tuple(cur.fetchall())
     conn.close()
     return db_feature_names
 
@@ -232,7 +237,7 @@ def validate_llm_output(db_feature_names, output_dict):
     return output_dict
 
 def parse_user_query(user_query: str):
-    db_feature_names=list(get_cached_feature_names())
+    db_feature_names = list(get_cached_feature_names())
     features = '\n'.join(row[0] for row in db_feature_names)
     feature_list_text = features
 
@@ -436,30 +441,34 @@ Example Output
 "unknown_terms": []
 }}
 '''
-    response = client.responses.create(model=OPEN_AI_MODEL,temperature=0,
-    input=[
-        {
-            "role": "system",
-            "content": [
-                {"type": "input_text", "text": system_prompt}
-            ]
-        },
-        {
-            "role": "user",
-            "content": [
-                {"type": "input_text", "text": user_query}
-            ]
-        }
-    ]
-        )
+    logger.info("Parsing user query with model %s", OPEN_AI_MODEL)
     try:
-        output_dict=json.loads(response.output_text)
-    
+        response = client.responses.create(
+            model=OPEN_AI_MODEL,
+            temperature=0,
+            input=[
+                {
+                    "role": "system",
+                    "content": [
+                        {"type": "input_text", "text": system_prompt}
+                    ]
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "input_text", "text": user_query}
+                    ]
+                }
+            ]
+        )
+    except (APITimeoutError, OpenAIError) as exc:
+        raise ExternalServiceError(f"Query parsing failed: {exc}") from exc
+    try:
+        output_dict = json.loads(response.output_text)
     except json.JSONDecodeError as e:
         raise ValueError(f"LLM returned invalid JSON: {e}")
-    
 
-    return validate_llm_output(db_feature_names,output_dict)
+    return validate_llm_output(db_feature_names, output_dict)
 
 # ===== INTENT CLASSIFIER =====
 def detect_intent(user_query: str) -> str:
@@ -510,24 +519,29 @@ Answer ONLY one word:
 PROPERTY_SEARCH or KNOWLEDGE_SEARCH
 """
 
-    response = client.responses.create(
-        model=OPEN_AI_MODEL,
-        temperature=0,
-        input=[
-            {
-                "role": "system",
-                "content": [{"type": "input_text", "text": prompt}]
-            },
-            {
-                "role": "user",
-                "content": [{"type": "input_text", "text": user_query}]
-            }
-        ]
-    )
+    logger.info("Detecting intent with model %s", OPEN_AI_MODEL)
+    try:
+        response = client.responses.create(
+            model=OPEN_AI_MODEL,
+            temperature=0,
+            input=[
+                {
+                    "role": "system",
+                    "content": [{"type": "input_text", "text": prompt}]
+                },
+                {
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": user_query}]
+                }
+            ]
+        )
+    except (APITimeoutError, OpenAIError) as exc:
+        raise ExternalServiceError(f"Intent detection failed: {exc}") from exc
 
     intent = response.output_text.strip().upper()
 
     if intent not in ["PROPERTY_SEARCH", "KNOWLEDGE_SEARCH"]:
+        logger.warning("Invalid intent response from model: %s", intent)
         return "PROPERTY_SEARCH"
 
     return intent

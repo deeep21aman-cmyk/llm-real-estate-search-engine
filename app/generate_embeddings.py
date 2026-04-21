@@ -1,10 +1,16 @@
-from openai import OpenAI
-from app.db import get_connection
-from app.config import OPEN_AI_MODEL
-from app.embeddings import get_embedding
-from app.openai_env import require_env
+import logging
 
-client=OpenAI(api_key=require_env("OPENAI_API_KEY"))
+from openai import APITimeoutError, OpenAI, OpenAIError
+
+from app.config import OPEN_AI_MODEL, OPENAI_TIMEOUT_SECONDS
+from app.db import get_connection
+from app.embeddings import get_embedding, to_vector
+from app.openai_env import require_env
+from app.service_errors import ExternalServiceError
+
+
+logger = logging.getLogger(__name__)
+client = OpenAI(api_key=require_env("OPENAI_API_KEY"), timeout=OPENAI_TIMEOUT_SECONDS)
 
 
 ATTRIBUTE_PROMPT = """
@@ -37,9 +43,9 @@ NORMALIZATION RULES
 If shorthand monetary values appear, convert them to full USD format.
 
 Examples:
-5k → $5000
-10k → $10000
-1.5k → $1500
+5k -> $5000
+10k -> $10000
+1.5k -> $1500
 
 Always use the format:
 $NUMBER
@@ -189,26 +195,30 @@ down payment: 20%,
 payment plan: $5000, 20%, 30%, 30%, 20%
 """
 
+
 def cleanup_text(raw_text):
-    
-    response = client.responses.create(
-        model=OPEN_AI_MODEL,
-        temperature=0,
-        input=[
-            {"role": "system", "content": [{"type": "input_text", "text": ATTRIBUTE_PROMPT}]},
-            {"role": "user", "content": [{"type": "input_text", "text": raw_text}]}
-        ]
-    )
+    try:
+        response = client.responses.create(
+            model=OPEN_AI_MODEL,
+            temperature=0,
+            input=[
+                {"role": "system", "content": [{"type": "input_text", "text": ATTRIBUTE_PROMPT}]},
+                {"role": "user", "content": [{"type": "input_text", "text": raw_text}]},
+            ],
+        )
+    except (APITimeoutError, OpenAIError) as exc:
+        raise ExternalServiceError(f"Embedding text cleanup failed: {exc}") from exc
 
     return response.output_text.strip()
 
 
 def generate_embeddings():
-    conn=get_connection()
+    conn = get_connection()
     with conn:
         with conn.cursor() as cur:
-            cur.execute('''
-SELECT 
+            cur.execute(
+                """
+SELECT
 id,
 title,
 description,
@@ -222,30 +232,34 @@ embedding_text
 FROM properties
 WHERE embedding_text IS NULL
    OR description_embedding IS NULL
-                ''')
-            rows=cur.fetchall()
-                        
-    
+                """
+            )
+            rows = cur.fetchall()
+
+            logger.info("Generating embeddings for %s properties", len(rows))
             for row in rows:
-                property_id=row[0]
-                title=row[1]
-                description=row[2]
-                address=row[3]
-                bedrooms=row[4]
-                bathrooms=row[5]
-                size=row[6]
-                lot_size=row[7]
-                year_built=row[8]
-                existing_embedding_text=row[9]
-                cur.execute("""
+                property_id = row[0]
+                title = row[1]
+                description = row[2]
+                address = row[3]
+                bedrooms = row[4]
+                bathrooms = row[5]
+                size = row[6]
+                lot_size = row[7]
+                year_built = row[8]
+                existing_embedding_text = row[9]
+                cur.execute(
+                    """
 SELECT f.name
 FROM property_features pf
 JOIN features f ON f.id = pf.feature_id
 WHERE pf.property_id = %s
-""", (property_id,))
+""",
+                    (property_id,),
+                )
                 features = [f[0] for f in cur.fetchall()]
                 features_text = ", ".join(features)
-                raw_text =  f"""
+                raw_text = f"""
 Title: {title}
 
 Address: {address}
@@ -265,6 +279,7 @@ Description:
                 if not cleaned_text:
                     cleaned_text = cleanup_text(raw_text)
 
+                logger.info("Generating property embedding for property_id=%s", property_id)
                 embedding = get_embedding(cleaned_text)
                 cur.execute(
                     """
@@ -273,10 +288,11 @@ Description:
                         description_embedding = %s
                     WHERE id = %s
                     """,
-                    (cleaned_text, embedding, property_id)
+                    (cleaned_text, to_vector(embedding), property_id),
                 )
-            
+
     conn.close()
+
 
 if __name__ == "__main__":
     generate_embeddings()

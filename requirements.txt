@@ -1,4 +1,9 @@
-openai
-psycopg[binary]
+fastapi
 numpy
+openai
+pgvector
+pydantic
+psycopg[binary]
 python-dotenv
+requests
+uvicorn

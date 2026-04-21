@@ -1,22 +1,44 @@
+import logging
 import sys
+import time
 from pathlib import Path
 
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.intent_parser import detect_intent, parse_user_query
 from app.embeddings import get_embedding
-from app.search_repository import search_repo, vector_search_repo
+from app.intent_parser import detect_intent, parse_user_query
 from app.query_processing import normalize_keywords
 from app.ranking_engine import rank_results
 from app.result_display import display_results
 from app.results_formatter import format_results
+from app.search_repository import search_repo, vector_search_repo
 
-import time
+
+logger = logging.getLogger(__name__)
+
+
+def _add_results(unique_results, results, max_new=None):
+    added = 0
+
+    for row in results:
+        if row[0] in unique_results:
+            continue
+        unique_results[row[0]] = row
+        added += 1
+        if max_new is not None and added >= max_new:
+            break
 
 
 def search_transcripts(query):
-    from KNOWLEDGE.app.search import search_transcripts as knowledge_search
+    try:
+        from app.KNOWLEDGE.app.search import search_transcripts as knowledge_search
+    except ImportError:
+        logger.warning("Knowledge search module is unavailable")
+        return {
+            "answer": "Knowledge search is temporarily unavailable.",
+            "sources": [],
+        }
 
     return knowledge_search(query)
 
@@ -33,31 +55,71 @@ def display_knowledge_results(result):
             if url:
                 print(f"- {url}")
 
-def run_property_search(query):
+    related_properties = result.get("related_properties", [])
+    if related_properties:
+        print("\nRelated Properties:\n")
+        for property_item in related_properties:
+            title = property_item.get("title", "")
+            price = property_item.get("price", "")
+            bedrooms = property_item.get("bedrooms", "")
+            bathrooms = property_item.get("bathrooms", "")
+            address = property_item.get("address", "")
+            link = property_item.get("link", "")
 
+            print(f"- {title}")
+            print(f"  Price: {price}")
+            print(f"  Beds/Baths: {bedrooms}/{bathrooms}")
+            print(f"  Address: {address}")
+            if link:
+                print(f"  Link: {link}")
+            print()
+
+
+def _format_related_property(row):
+    return {
+        "title": row[1],
+        "price": row[2],
+        "bedrooms": row[3],
+        "bathrooms": row[4],
+        "size": row[5],
+        "address": row[6],
+        "link": row[7],
+    }
+
+
+def get_related_properties_for_knowledge(query, limit=3):
+    try:
+        query_embedding = get_embedding(query)
+        vector_results = vector_search_repo(query_embedding, limit=10)
+        keywords = normalize_keywords(query.split())
+        parsed = {
+            "unknown_terms": keywords,
+            "feature_names": [],
+            "location": None,
+            "location_keywords": [],
+        }
+        scored_results = rank_results(vector_results, query_embedding, parsed)
+        top_results = [row for _, row in scored_results[:min(limit, 3)]]
+        return [_format_related_property(row) for row in top_results]
+    except Exception as exc:
+        logger.warning("Related property suggestion lookup failed: %s", exc)
+        return []
+
+
+def run_property_search(query):
     total_start = time.time()
     MAX_RESULTS = 6
     TOTAL_RESULTS = 8
+    SEARCH_STAGE_LIMIT = 24
+    logger.info("Starting property search pipeline")
 
-    # -----------------------
-    # Parse user query
-    # -----------------------
     parsed = parse_user_query(query)
-    print(parsed)
+    logger.info("Parsed query successfully")
 
-    # -----------------------
-    # Normalize keywords
-    # -----------------------
     keywords = normalize_keywords(parsed["unknown_terms"])
-
-    # -----------------------
-    # Embed query
-    # -----------------------
     query_embedding = get_embedding(query)
 
-    # -----------------------
-    # Stage 1 — Exact match (all constraints)
-    # -----------------------
+    logger.info("Running structured repository search")
     exact_results = search_repo(
         parsed["bedrooms"],
         parsed["bathrooms"],
@@ -83,15 +145,10 @@ def run_property_search(query):
         parsed["feature_names"],
         keywords,
         query_embedding,
+        limit=SEARCH_STAGE_LIMIT,
     )
+    all_results = list(exact_results[:8])
 
-    # Stage 1 can fill up to MAX_RESULTS
-    exact_results = exact_results[:MAX_RESULTS]
-    all_results = list(exact_results)
-
-    # -----------------------
-    # Stage 2 — Relax numeric constraints but keep features
-    # -----------------------
     if parsed["bedrooms"]:
         relaxed_min_bed = parsed["bedrooms"] - 1
         relaxed_max_bed = parsed["bedrooms"] + 1
@@ -124,15 +181,11 @@ def run_property_search(query):
         parsed["feature_names"],
         keywords,
         query_embedding,
+        limit=SEARCH_STAGE_LIMIT,
     )
 
-    remaining = MAX_RESULTS - len(all_results)
-    numeric_relaxed_results = numeric_relaxed_results[:min(2, remaining)]
-    all_results.extend(numeric_relaxed_results)
+    all_results.extend(numeric_relaxed_results[:5])
 
-    # -----------------------
-    # Stage 3 — Same bedrooms but remove feature constraint
-    # -----------------------
     same_bedroom_results = search_repo(
         parsed["bedrooms"],
         parsed["bathrooms"],
@@ -155,18 +208,14 @@ def run_property_search(query):
         parsed["max_down_payment_percent"],
         parsed["location"],
         parsed["location_keywords"],
-        [],  # remove features
+        [],
         keywords,
         query_embedding,
+        limit=SEARCH_STAGE_LIMIT,
     )
 
-    remaining = MAX_RESULTS - len(all_results)
-    same_bedroom_results = same_bedroom_results[:min(2, remaining)]
-    all_results.extend(same_bedroom_results)
+    all_results.extend(same_bedroom_results[:4])
 
-    # -----------------------
-    # Stage 4 — Feature focused search (any bedrooms)
-    # -----------------------
     feature_results = search_repo(
         None,
         None,
@@ -192,19 +241,15 @@ def run_property_search(query):
         parsed["feature_names"],
         keywords,
         query_embedding,
+        limit=SEARCH_STAGE_LIMIT,
     )
 
-    remaining = MAX_RESULTS - len(all_results)
-    feature_results = feature_results[:min(2, remaining)]
-    all_results.extend(feature_results)
+    all_results.extend(feature_results[:4])
 
-    # -----------------------
-    # Deduplicate results
-    # -----------------------
     unique_results = {}
-    for r in all_results:
-        unique_results[r[0]] = r
+    _add_results(unique_results, all_results)
 
+    logger.info("Running vector repository search")
     vector_results = vector_search_repo(
         query_embedding,
         parsed["bedrooms"],
@@ -222,36 +267,51 @@ def run_property_search(query):
         parsed["min_year_built"],
         parsed["max_year_built"],
         parsed["is_discounted"],
+        parsed["location"],
+        limit=12,
     )
 
-    for r in vector_results:
-        unique_results[r[0]] = r
+    _add_results(unique_results, vector_results)
+
+    should_run_relaxed_vector = (
+        len(unique_results) < TOTAL_RESULTS
+        or bool(keywords)
+        or bool(parsed["feature_names"])
+    )
+
+    if should_run_relaxed_vector:
+        logger.info("Running relaxed vector fallback search")
+        relaxed_vector_results = vector_search_repo(
+            query_embedding,
+            min_price=parsed["min_price"],
+            max_price=parsed["max_price"],
+            is_discounted=parsed["is_discounted"],
+            location=parsed["location"],
+            limit=16,
+        )
+        _add_results(unique_results, relaxed_vector_results)
 
     combined_results = list(unique_results.values())
-
     scored_results = rank_results(combined_results, query_embedding, parsed)
     top_results = [r for _, r in scored_results[:MAX_RESULTS]]
     additional = [r for _, r in scored_results[MAX_RESULTS:TOTAL_RESULTS]]
 
-    # -----------------------
-    # Format results for API
-    # -----------------------
     formatted_results = format_results(parsed, keywords, top_results, additional)
-
-    # -----------------------
-    # Display results (CLI)
-    # -----------------------
     display_results(parsed, keywords, top_results, additional)
 
+    logger.info("Final response prepared with %s top results", len(top_results))
     print(f"\nTotal pipeline time: {time.time() - total_start:.4f} seconds")
 
     return formatted_results
 
+
 if __name__ == "__main__":
-    query='3 bedroom'
+    query = "financing options"
     intent = detect_intent(query)
 
     if intent == "PROPERTY_SEARCH":
         print(run_property_search(query))
     elif intent == "KNOWLEDGE_SEARCH":
-        display_knowledge_results(search_transcripts(query))
+        knowledge_result = search_transcripts(query)
+        knowledge_result["related_properties"] = get_related_properties_for_knowledge(query)
+        display_knowledge_results(knowledge_result)
